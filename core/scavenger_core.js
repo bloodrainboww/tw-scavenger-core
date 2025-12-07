@@ -1,9 +1,13 @@
 // ==========================================
-//  TW SCAVENGER SAFE CORE v2.0
+//  TW SCAVENGER SAFE CORE v2.1
 //  - TwCheese ASS altyapısı
 //  - Sadece input doldurur, GÖNDERMEZ
 //  - Enter ile gönderme yok
 //  - Küçük "Safe Mod" paneli
+//  - Başlıkta "Script created by..." kaldırılır
+//  - "» preferences" -> "» Tercihler"
+//  - Prefs penceresinde Order bölümü gizlenir,
+//    Use + Reserved kalır, birim isimleri eklenir.
 // ==========================================
 
 (function () {
@@ -58,7 +62,6 @@
             // Gönderme butonlarını KİLİTLE (ama görünüşlerini bozma)
             var sendButtons = document.querySelectorAll(".free_send_button");
             sendButtons.forEach(function (btn) {
-                // Capture fazında olayı yakala ve bitir
                 btn.addEventListener(
                     "click",
                     function (e) {
@@ -89,7 +92,6 @@
             });
 
             // Enter ile gönderme / submit davranışını da engelle
-            // Sadece içerik alanı / temizleme paneli civarında
             document.addEventListener(
                 "keydown",
                 function (e) {
@@ -157,7 +159,7 @@
 
             panel.innerHTML =
                 '<div style="font-weight:bold; font-size:12px; margin-bottom:4px; color:#ffd077;">' +
-                    'Temizleme Safe Mod v2.0' +
+                    'Temizleme Safe Mod v2.1' +
                 "</div>" +
                 '<div style="margin-bottom:4px; line-height:1.4;">' +
                     '<span style="color:#7cff7c;">•</span> Otomatik <b>Gönderme</b>: <b style="color:#ff8080;">KAPALI</b><br/>' +
@@ -178,7 +180,128 @@
     setTimeout(createSafePanel, 1500);
 
     // ============================
-    // 4) İlk bilgi mesajı
+    // 4) Üst başlıkta TR çeviri + imzayı kaldırma
+    // ============================
+    function localizeHeader() {
+        try {
+            if (typeof window.$ === "undefined") return;
+            var $ = window.$;
+
+            var $h3 = $("#content_value").find("h3").eq(0);
+            if (!$h3.length) return;
+
+            // "» preferences" linkini bul ve TR yap
+            $h3.find("a").each(function () {
+                var $a = $(this);
+                if ($a.text().indexOf("preferences") !== -1) {
+                    $a.text("» Tercihler");
+                }
+            });
+
+            // "Script created by cheesasaurus" yazısını kaldır
+            $h3.find("span").each(function () {
+                var txt = $(this).text();
+                if (txt.indexOf("Script created by") !== -1) {
+                    $(this).remove();
+                }
+            });
+        } catch (e) {
+            console.log("Header lokalizasyonunda hata:", e);
+        }
+    }
+
+    (function scheduleHeaderLocalization() {
+        var tries = 0;
+        var maxTries = 20;
+        var id = setInterval(function () {
+            tries++;
+            localizeHeader();
+            if (tries >= maxTries) {
+                clearInterval(id);
+            }
+        }, 500);
+    })();
+
+    // ============================
+    // 5) Prefs penceresini düzenle
+    //    - Order bölümünü gizle
+    //    - Birim isimlerini ekle
+    // ============================
+    function tweakPreferencesDialog(root) {
+        try {
+            if (typeof window.$ === "undefined") return;
+            var $ = window.$;
+            var $root = $(root);
+
+            // Troop Order bölümünü gizle
+            $root.find(".troop-order-section").each(function () {
+                // Bu tabloyu ve onu tutan hücreyi gizleyelim
+                $(this).closest("td, table").css("display", "none");
+            });
+
+            // Birim isimleri
+            var names = {
+                spear: "Mızrakçı",
+                sword: "Kılıç",
+                axe: "Balta",
+                archer: "Okçu",
+                spy: "Casus",
+                light: "Hafif Atlı",
+                marcher: "Atlı Okçu",
+                heavy: "Ağır Atlı",
+                knight: "Şövalye"
+            };
+
+            $root.find(".troops-section .troop-allowed").each(function () {
+                var type = this.value;
+                var label = names[type];
+                if (!label) return;
+
+                var $img = $(this).next("img");
+                if ($img.length && !$img.next(".scav-unit-name").length) {
+                    $img.after(
+                        '<span class="scav-unit-name" style="margin-left:4px;">' +
+                            label +
+                        "</span>"
+                    );
+                }
+            });
+        } catch (e) {
+            console.log("Prefs düzenlemesinde hata:", e);
+        }
+    }
+
+    function setupPreferencesObserver() {
+        try {
+            var observer = new MutationObserver(function (mutations) {
+                mutations.forEach(function (m) {
+                    if (!m.addedNodes) return;
+                    m.addedNodes.forEach(function (node) {
+                        if (
+                            node.nodeType === 1 &&
+                            node.id === "twcheese-scavenge-preferences-popup"
+                        ) {
+                            // Prefs penceresi açıldı
+                            tweakPreferencesDialog(node);
+                        }
+                    });
+                });
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        } catch (e) {
+            console.log("Prefs observer kurulurken hata:", e);
+        }
+    }
+
+    // Prefs observer'ı kur
+    setupPreferencesObserver();
+
+    // ============================
+    // 6) İlk bilgi mesajı
     // ============================
     (function showStartupMessage() {
         try {
