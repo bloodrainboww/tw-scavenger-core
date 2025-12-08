@@ -1,322 +1,279 @@
-// ==========================================
-//  TW SCAVENGER SAFE CORE v2.1
-//  - TwCheese ASS altyapısı
-//  - Sadece input doldurur, GÖNDERMEZ
-//  - Enter ile gönderme yok
-//  - Küçük "Safe Mod" paneli
-//  - Başlıkta "Script created by..." kaldırılır
-//  - "» preferences" -> "» Tercihler"
-//  - Prefs penceresinde Order bölümü gizlenir,
-//    Use + Reserved kalır, birim isimleri eklenir.
-// ==========================================
+// =====================================================
+//  KLANLAR TEMİZLEME ÇEKİRDEĞİ  v2.1
+//  - Orijinal TwCheese ASS çekirdeği yüklenir
+//  - Otomatik gönderme / Enter ile gönderme KAPALI
+//  - "preferences" başlığı Türkçe
+//  - "Script created by cheesasaurus" yazısı kaldırılır
+//  - Tercihler penceresinde:
+//        * Order (sıra) bölümü kaldırılır
+//        * Use / Reserved kalır
+//        * Birim simgelerinin yanına isimleri eklenir
+// =====================================================
 
 (function () {
-    "use strict";
-
-    // Aynı sekmede ikinci kez çalışmasını engelle
-    if (window.SCAVENGER_CORE_LOADED) {
-        try {
-            if (window.UI && UI.InfoMessage) {
-                UI.InfoMessage("Scavenger Safe Core zaten aktif ✅");
-            } else {
-                console.log("Scavenger Safe Core zaten aktif ✅");
-            }
-        } catch (e) {}
+    if (window.SCAVENGER_CORE_V21_LOADED) {
+        if (window.UI && UI.InfoMessage) {
+            UI.InfoMessage("Scavenger çekirdeği v2.1 zaten yüklü ✅");
+        } else {
+            console.log("Scavenger core v2.1 already loaded.");
+        }
         return;
     }
-    window.SCAVENGER_CORE_LOADED = true;
+    window.SCAVENGER_CORE_V21_LOADED = true;
 
-    console.log("✅ Scavenger Safe Core başlatılıyor...");
-
-    // ============================
-    // 1) TwCheese ASS yükle
-    // ============================
-    (function loadAss() {
-        try {
-            var s = document.createElement("script");
-            s.src = "https://cheesasaurus.github.io/twcheese/launch/ASS.js?" + Date.now();
-            s.onload = function () {
-                console.log("✅ TwCheese ASS yüklendi (launch/ASS.js).");
-            };
-            s.onerror = function () {
-                console.log("❌ TwCheese ASS yüklenemedi.");
-                try {
-                    if (window.UI && UI.ErrorMessage) {
-                        UI.ErrorMessage("❌ TwCheese ASS yüklenemedi.");
-                    }
-                } catch (e) {}
-            };
-            document.body.appendChild(s);
-        } catch (e) {
-            console.log("ASS yükleme hatası:", e);
+    // -------------------------------
+    // 1. Temizleme ekranına oto yönlendir
+    // -------------------------------
+    function goToScavengeScreen() {
+        var href = window.location.href;
+        if (href.indexOf("screen=place") !== -1 && href.indexOf("mode=scavenge") !== -1) {
+            return; // zaten temizleme ekranındayız
         }
-    })();
 
-    // ============================
-    // 2) Güvenlik Freni:
-    //    - free_send_button clicklerini kes
-    //    - Enter ile otomatik gönderimi engelle
-    // ============================
-    function applySafetyPatch() {
+        var villageMatch = href.match(/village=(\d+)/);
+        var villageId = villageMatch ? villageMatch[1] : null;
+        if (!villageId) {
+            alert("Köy ID'si bulunamadı, lütfen elle İçtima Meydanı > Temizlik ekranına gir.");
+            return;
+        }
+
+        var target =
+            "/game.php?village=" +
+            villageId +
+            "&screen=place&mode=scavenge&scav_core_start=1";
+        window.location.href = target;
+    }
+
+    // Eğer başka ekrandaysak önce yönlendir
+    goToScavengeScreen();
+
+    // Redirect sonrası tekrar yüklendiğimizde (scav_core_start parametresi) paneli otomatik aç
+    if (location.href.indexOf("mode=scavenge") !== -1) {
+        // Birkaç ms sonra çalışsın ki sayfa tamamen yüklensin
+        setTimeout(function () {
+            loadOriginalASSAndPatch();
+        }, 400);
+    }
+
+    // -------------------------------
+    // 2. Orijinal ASS'i yükle + patch
+    // -------------------------------
+    function loadOriginalASSAndPatch() {
+        // Eğer TwCheese zaten yüklüyse tekrar script eklemeye gerek yok
+        if (window.TwCheese && window.TwCheese.tools && window.TwCheese.tools.ASS) {
+            console.log("TwCheese ASS zaten var, sadece patch uygulanıyor.");
+            installSafetyPatches();
+            installUiCustomizations();
+            return;
+        }
+
+        console.log("TwCheese ASS yükleniyor...");
+
+        var s = document.createElement("script");
+        s.src =
+            "https://cheesasaurus.github.io/twcheese/launch/ASS.js?" +
+            Date.now();
+        s.onload = function () {
+            console.log("TwCheese ASS yüklendi, patchler uygulanıyor.");
+            // TwCheese kendi içinde async init yapıyor, bu yüzden
+            // patchleri biraz gecikmeli çağırmak güvenli.
+            setTimeout(function () {
+                installSafetyPatches();
+                installUiCustomizations();
+            }, 1000);
+        };
+        s.onerror = function () {
+            alert("❌ TwCheese ASS yüklenemedi. İnternet / Github erişimini kontrol et.");
+        };
+        document.body.appendChild(s);
+    }
+
+    // -------------------------------
+    // 3. Otomatik gönderme / Enter kilidi
+    // -------------------------------
+    function installSafetyPatches() {
         try {
-            // Gönderme butonlarını KİLİTLE (ama görünüşlerini bozma)
-            var sendButtons = document.querySelectorAll(".free_send_button");
-            sendButtons.forEach(function (btn) {
-                btn.addEventListener(
-                    "click",
-                    function (e) {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        try {
-                            if (window.UI && UI.ErrorMessage) {
-                                UI.ErrorMessage(
-                                    "❌ Otomatik gönderme bu sürümde KAPALI.<br/>" +
-                                    "Script sadece askerleri kutulara yerleştirir.<br/>" +
-                                    "Göndermek için butona kendin basmalısın."
-                                );
-                            } else {
-                                alert(
-                                    "❌ Otomatik gönderme kapalı.\n" +
-                                    "Script sadece askerleri kutulara yerleştirir.\n" +
-                                    "Göndermek için butona kendin bas."
-                                );
-                            }
-                        } catch (err) {}
-                        return false;
-                    },
-                    true // capture
-                );
+            // Butonları kilitle + renklendir
+            function patchButtons() {
+                var buttons = document.querySelectorAll(".free_send_button");
+                buttons.forEach(function (btn) {
+                    if (btn.dataset.scavSafePatched === "1") return;
 
-                // Görseli bozma, sadece tooltip ekle
-                btn.title = "Otomatik gönderme kapalı (Scavenger Safe Mod)";
-            });
+                    btn.addEventListener(
+                        "click",
+                        function (e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            alert(
+                                "❌ Otomatik gönderme bu sürümde kapalı.\n" +
+                                    "Script sadece birlik alanlarını doldurur, göndermeyi sen yaparsın."
+                            );
+                            return false;
+                        },
+                        true
+                    );
 
-            // Enter ile gönderme / submit davranışını da engelle
+                    btn.style.filter = "grayscale(1)";
+                    btn.style.cursor = "not-allowed";
+                    btn.title = "Otomatik gönderme kapalı (Scavenger Core v2.1)";
+                    btn.dataset.scavSafePatched = "1";
+                });
+            }
+
+            patchButtons();
+
+            // Yeni seçenek yüklendikçe butonlar tekrar geliyor, bu yüzden arada yoklayalım
+            setInterval(patchButtons, 1500);
+
+            // Enter ile gönderme vs. tamamen kilit
             document.addEventListener(
                 "keydown",
                 function (e) {
                     if (e.key === "Enter") {
-                        if (e.target && e.target.closest("#content_value, .scavenge-option")) {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                            try {
-                                if (window.UI && UI.ErrorMessage) {
-                                    UI.ErrorMessage(
-                                        "❌ Enter ile otomatik gönderme KAPALI.<br/>" +
-                                        "Göndermek için butona kendin bas."
-                                    );
-                                }
-                            } catch (err) {}
-                            return false;
-                        }
+                        // Sadece preferences popup içine yazarken enter serbest olsun
+                        var active = document.activeElement;
+                        var insidePrefs =
+                            active &&
+                            active.closest &&
+                            active.closest(
+                                "#twcheese-scavenge-preferences-popup"
+                            );
+                        if (insidePrefs) return;
+
+                        e.preventDefault();
+                        e.stopPropagation();
+                        alert(
+                            "❌ Enter ile otomatik gönderme devre dışı.\n" +
+                                "Göndermek için normal temizleme butonlarını kullan."
+                        );
+                        return false;
                     }
                 },
-                true // capture
+                true
             );
         } catch (e) {
-            console.log("Güvenlik yaması sırasında hata:", e);
+            console.error("Scavenger safety patch hata:", e);
         }
     }
 
-    // Güvenlik frenini birkaç kez dene (sayfa dinamik olduğu için)
-    (function scheduleSafetyPatch() {
-        var tries = 0;
-        var maxTries = 20; // ~10 saniye (500ms aralıkla)
-
-        var intervalId = setInterval(function () {
-            tries++;
-            applySafetyPatch();
-            if (tries >= maxTries) {
-                clearInterval(intervalId);
-            }
-        }, 500);
-    })();
-
-    // ============================
-    // 3) Küçük Safe Mod Paneli
-    // ============================
-    function createSafePanel() {
-        try {
-            if (document.getElementById("scav-safe-panel")) {
-                return;
-            }
-
-            var panel = document.createElement("div");
-            panel.id = "scav-safe-panel";
-            panel.style.position = "fixed";
-            panel.style.right = "20px";
-            panel.style.bottom = "20px";
-            panel.style.background = "rgba(20,20,20,0.92)";
-            panel.style.border = "1px solid #555";
-            panel.style.borderRadius = "8px";
-            panel.style.padding = "8px 10px";
-            panel.style.fontSize = "11px";
-            panel.style.color = "#eee";
-            panel.style.zIndex = "99999";
-            panel.style.maxWidth = "230px";
-            panel.style.boxShadow = "0 0 8px rgba(0,0,0,0.6)";
-            panel.style.fontFamily = "Verdana,Arial,sans-serif";
-
-            panel.innerHTML =
-                '<div style="font-weight:bold; font-size:12px; margin-bottom:4px; color:#ffd077;">' +
-                    'Temizleme Safe Mod v2.1' +
-                "</div>" +
-                '<div style="margin-bottom:4px; line-height:1.4;">' +
-                    '<span style="color:#7cff7c;">•</span> Otomatik <b>Gönderme</b>: <b style="color:#ff8080;">KAPALI</b><br/>' +
-                    '<span style="color:#7cff7c;">•</span> <b>Enter</b> ile gönderme: <b style="color:#ff8080;">KAPALI</b><br/>' +
-                    '<span style="color:#7cff7c;">•</span> Script yalnızca <b>asker sayılarını doldurur</b>.' +
-                "</div>" +
-                '<div style="font-size:10px; opacity:0.7; margin-top:3px; text-align:right;">' +
-                    "BloodRainBoww × ChatGPT" +
-                "</div>";
-
-            document.body.appendChild(panel);
-        } catch (e) {
-            console.log("Safe panel oluşturulurken hata:", e);
+    // -------------------------------
+    // 4. Türkçe başlık + preferences popup düzenleme
+    // -------------------------------
+    function installUiCustomizations() {
+        if (typeof $ === "undefined") {
+            console.warn(
+                "jQuery ($) yok gibi görünüyor, UI özelleştirmesi atlandı."
+            );
+            return;
         }
-    }
 
-    // Paneli biraz gecikmeli oluştur (oyun arayüzü otursun)
-    setTimeout(createSafePanel, 1500);
+        function tweakHeader() {
+            var $h3 = $("#content_value").find("h3").first();
+            if (!$h3.length || $h3.data("scav-header-done")) return;
 
-    // ============================
-    // 4) Üst başlıkta TR çeviri + imzayı kaldırma
-    // ============================
-    function localizeHeader() {
-        try {
-            if (typeof window.$ === "undefined") return;
-            var $ = window.$;
-
-            var $h3 = $("#content_value").find("h3").eq(0);
-            if (!$h3.length) return;
-
-            // "» preferences" linkini bul ve TR yap
+            // '» preferences' linkini Türkçeleştir
             $h3.find("a").each(function () {
                 var $a = $(this);
-                if ($a.text().indexOf("preferences") !== -1) {
+                var text = ($a.text() || "").toLowerCase();
+                if (text.indexOf("preferences") !== -1) {
                     $a.text("» Tercihler");
                 }
             });
 
-            // "Script created by cheesasaurus" yazısını kaldır
+            // 'Script created by cheesasaurus' yazısını kaldır
             $h3.find("span").each(function () {
-                var txt = $(this).text();
-                if (txt.indexOf("Script created by") !== -1) {
+                var txt = ($(this).text() || "").toLowerCase();
+                if (txt.indexOf("cheesasaurus") !== -1) {
                     $(this).remove();
                 }
             });
-        } catch (e) {
-            console.log("Header lokalizasyonunda hata:", e);
+
+            $h3.data("scav-header-done", true);
         }
-    }
 
-    (function scheduleHeaderLocalization() {
-        var tries = 0;
-        var maxTries = 20;
-        var id = setInterval(function () {
-            tries++;
-            localizeHeader();
-            if (tries >= maxTries) {
-                clearInterval(id);
-            }
-        }, 500);
-    })();
+        // Birim isimleri
+        var UNIT_NAMES_TR = {
+            spear: "Mızrakçı",
+            sword: "Kılıç",
+            axe: "Balta",
+            archer: "Okçu",
+            spy: "Casus",
+            light: "Hafif Atlı",
+            marcher: "Atlı Okçu",
+            heavy: "Ağır Atlı",
+            knight: "Şövalye",
+            ram: "Koçbaşı",
+            catapult: "Mancınık",
+            snob: "Asil",
+            militia: "Milis"
+        };
 
-    // ============================
-    // 5) Prefs penceresini düzenle
-    //    - Order bölümünü gizle
-    //    - Birim isimlerini ekle
-    // ============================
-    function tweakPreferencesDialog(root) {
-        try {
-            if (typeof window.$ === "undefined") return;
-            var $ = window.$;
-            var $root = $(root);
+        function tweakPreferencesPopup() {
+            var $popup = $("#twcheese-scavenge-preferences-popup");
+            if (!$popup.length) return;
 
-            // Troop Order bölümünü gizle
-            $root.find(".troop-order-section").each(function () {
-                // Bu tabloyu ve onu tutan hücreyi gizleyelim
-                $(this).closest("td, table").css("display", "none");
-            });
+            var $widget = $popup.find(".twcheese-scavenge-preferences-widget");
+            if (!$widget.length || $widget.data("scav-prefs-done")) return;
 
-            // Birim isimleri
-            var names = {
-                spear: "Mızrakçı",
-                sword: "Kılıç",
-                axe: "Balta",
-                archer: "Okçu",
-                spy: "Casus",
-                light: "Hafif Atlı",
-                marcher: "Atlı Okçu",
-                heavy: "Ağır Atlı",
-                knight: "Şövalye"
-            };
+            // 1) Order bölümünü kaldır
+            $widget.find(".troop-order-section").closest("td").remove();
 
-            $root.find(".troops-section .troop-allowed").each(function () {
-                var type = this.value;
-                var label = names[type];
-                if (!label) return;
+            // 2) Birim simgelerinin yanına isim ekle
+            $widget.find(".troops-section tr").each(function () {
+                var $row = $(this);
+                var $img = $row.find("img[src*='unit_']").first();
+                if (!$img.length) return;
 
-                var $img = $(this).next("img");
-                if ($img.length && !$img.next(".scav-unit-name").length) {
-                    $img.after(
-                        '<span class="scav-unit-name" style="margin-left:4px;">' +
-                            label +
-                        "</span>"
-                    );
+                if ($img.next(".scav-unit-name").length) return; // zaten eklenmiş
+
+                var src = $img.attr("src") || "";
+                var m = src.match(/unit_([a-zA-Z0-9_]+)\.png/);
+                var key = m ? m[1] : null;
+                var name = key && UNIT_NAMES_TR[key] ? UNIT_NAMES_TR[key] : "";
+
+                if (name) {
+                    var $span = $("<span>")
+                        .addClass("scav-unit-name")
+                        .text(" " + name);
+                    $span.insertAfter($img);
                 }
             });
-        } catch (e) {
-            console.log("Prefs düzenlemesinde hata:", e);
+
+            $widget.data("scav-prefs-done", true);
         }
+
+        // Biraz basic stil dokunuşu
+        addScavengerCss(
+            ".scav-unit-name{margin-left:4px;font-size:11px;color:#f5e4c6;}" +
+                "#twcheese-scavenge-preferences-popup .vis{background:#f3e0c6;}"
+        );
+
+        // İlk yüklemede bir kere dene
+        setTimeout(function () {
+            tweakHeader();
+            tweakPreferencesPopup();
+        }, 1200);
+
+        // Daha sonra oluşan değişiklikleri yakalamak için observer
+        var obs = new MutationObserver(function () {
+            tweakHeader();
+            tweakPreferencesPopup();
+        });
+
+        obs.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
-    function setupPreferencesObserver() {
+    function addScavengerCss(cssText) {
         try {
-            var observer = new MutationObserver(function (mutations) {
-                mutations.forEach(function (m) {
-                    if (!m.addedNodes) return;
-                    m.addedNodes.forEach(function (node) {
-                        if (
-                            node.nodeType === 1 &&
-                            node.id === "twcheese-scavenge-preferences-popup"
-                        ) {
-                            // Prefs penceresi açıldı
-                            tweakPreferencesDialog(node);
-                        }
-                    });
-                });
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+            var style = document.createElement("style");
+            style.type = "text/css";
+            style.textContent = cssText;
+            document.head.appendChild(style);
         } catch (e) {
-            console.log("Prefs observer kurulurken hata:", e);
+            console.error("Scavenger CSS eklenemedi:", e);
         }
     }
-
-    // Prefs observer'ı kur
-    setupPreferencesObserver();
-
-    // ============================
-    // 6) İlk bilgi mesajı
-    // ============================
-    (function showStartupMessage() {
-        try {
-            if (window.UI && UI.SuccessMessage) {
-                UI.SuccessMessage(
-                    "✅ Scavenger Safe Core Aktif.<br/>" +
-                    "Otomatik gönderme ve Enter ile gönderme KAPALI.<br/>" +
-                    "Script sadece temizleme inputlarını doldurur."
-                );
-            } else {
-                console.log(
-                    "✅ Scavenger Safe Core aktif. Otomatik gönderme ve Enter ile gönderme kapalı."
-                );
-            }
-        } catch (e) {}
-    })();
-
 })();
